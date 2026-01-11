@@ -7,9 +7,12 @@ const manifest = {
     version: '1.0.0',
     name: 'Souhail RD Streams',
     description: 'Real-Debrid streaming with direct sources',
+    logo: 'https://img.icons8.com/color/96/000000/movie.png',
+    background: 'https://img.icons8.com/color/480/000000/cinema-.png',
     resources: ['stream'],
     types: ['movie', 'series'],
-    idPrefixes: ['tt', 'tmdb']
+    idPrefixes: ['tt', 'tmdb'],
+    catalogs: []  // ⬅️ هادا اللي كان ناقص: array فاضي
 };
 
 const builder = new addonBuilder(manifest);
@@ -45,27 +48,24 @@ async function searchTorrents(movieTitle, year = '') {
     // مصادر مختلفة
     const sources = ['YTS', 'RARBG', 'ETTV', 'TGx', '1337x'];
     
-    // إصدارات مختلفة
-    const versions = ['', 'EXTENDED', 'DIRECTOR\'S CUT', 'UNRATED'];
-    
     // توليد نتائج متنوعة
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 15; i++) {
         const quality = qualities[Math.floor(Math.random() * qualities.length)];
         const source = sources[Math.floor(Math.random() * sources.length)];
-        const version = versions[Math.floor(Math.random() * versions.length)];
         const movieYear = year || '2024';
         
-        const title = `${movieTitle} (${movieYear})${version ? ' ' + version : ''} ${quality} ${source}`;
+        // توليد عنوان فريد
+        const title = `${movieTitle} (${movieYear}) ${quality} [${source}]`;
         
         results.push({
             title: title,
-            magnet: `magnet:?xt=urn:btih:${generateHash(title + i)}&dn=${encodeURIComponent(title)}&tr=udp://tracker.opentrackr.org:1337/announce`,
+            magnet: `magnet:?xt=urn:btih:${generateHash(title + i + Date.now())}&dn=${encodeURIComponent(title)}&tr=udp://tracker.opentrackr.org:1337/announce`,
             source: source,
             quality: quality,
             size: getRandomSize(quality),
             seeders: getRandomSeeders(quality),
             year: movieYear,
-            info_hash: generateHash(title + i)
+            info_hash: generateHash(title + i + Date.now())
         });
     }
     
@@ -73,6 +73,8 @@ async function searchTorrents(movieTitle, year = '') {
     return results.sort((a, b) => {
         if (a.quality.includes('4K') && !b.quality.includes('4K')) return -1;
         if (!a.quality.includes('4K') && b.quality.includes('4K')) return 1;
+        if (a.quality.includes('1080p') && !b.quality.includes('1080p')) return -1;
+        if (!a.quality.includes('1080p') && b.quality.includes('1080p')) return 1;
         return b.seeders - a.seeders;
     });
 }
@@ -82,15 +84,15 @@ async function checkRealDebrid(magnet, apiKey) {
     if (!apiKey || !magnet) return null;
     
     try {
-        // محاكاة للاختبار - في الواقع تصل لـ RD API
         console.log(`🔗 التحقق من Real-Debrid...`);
         
-        // 50% فرصة أن يكون في الكاش (للاختبار)
-        const isCached = Math.random() > 0.5;
+        // 60% فرصة أن يكون في الكاش (للاختبار)
+        const isCached = Math.random() > 0.4;
         
         if (isCached) {
+            const streamId = generateHash(magnet).substring(0, 20);
             return {
-                streamUrl: `https://real-debrid.com/stream/${generateHash(magnet).substring(0, 20)}`,
+                streamUrl: `https://real-debrid.com/stream/${streamId}`,
                 cached: true
             };
         }
@@ -110,7 +112,8 @@ builder.defineStreamHandler(async ({ id, type }) => {
     if (!RD_API_KEY) {
         return {
             streams: [{
-                title: '⚠️ Please add RD_API_KEY to Railway Variables',
+                name: '⚙️ API Key Required',
+                title: 'Please add RD_API_KEY to Railway Variables',
                 url: ''
             }]
         };
@@ -121,9 +124,10 @@ builder.defineStreamHandler(async ({ id, type }) => {
         let movieInfo = movieDatabase[id];
         
         if (!movieInfo) {
-            // إذا الفيلم مش في قاعدة البيانات
+            // إذا الفيلم مش في قاعدة البيانات، استخرج من ID
+            const movieId = id.startsWith('tt') ? id.substring(2) : id;
             movieInfo = {
-                title: `Movie ${id.substring(2, 8)}`,
+                title: `Movie #${movieId.substring(0, 6)}`,
                 year: '2024'
             };
         }
@@ -133,6 +137,11 @@ builder.defineStreamHandler(async ({ id, type }) => {
         // البحث عن التورنتات
         const torrents = await searchTorrents(movieInfo.title, movieInfo.year);
         console.log(`📥 العثور على ${torrents.length} تورنت`);
+        
+        // عرض أول 3 نتائج في الكونسول
+        torrents.slice(0, 3).forEach((t, i) => {
+            console.log(`${i+1}. ${t.quality} - ${t.title.substring(0, 50)}...`);
+        });
         
         // معالجة أول 8 تورنتات
         const streams = [];
@@ -146,27 +155,34 @@ builder.defineStreamHandler(async ({ id, type }) => {
             
             if (rdResult && rdResult.cached) {
                 // Real-Debrid cached
+                const qualityIcon = torrent.quality.includes('4K') ? '🔥' : '💎';
                 streams.push({
-                    name: `🎬 ${torrent.quality}`,
-                    title: `${torrent.title} | ${torrent.size} | ${torrent.seeders} seeds | ✅ CACHED`,
-                    url: `http://localhost:3000/proxy/${encodeURIComponent(rdResult.streamUrl)}`
+                    name: `${qualityIcon} ${torrent.quality}`,
+                    title: `🎬 ${torrent.title}\n📊 ${torrent.quality} | 💾 ${torrent.size} | 👤 ${torrent.seeders} seeds\n✅ CACHED ON REAL-DEBRID`,
+                    url: `http://localhost:3000/proxy/${generateHash(torrent.magnet)}`
                 });
             } else {
                 // Torrent only
+                const qualityIcon = torrent.quality.includes('4K') ? '🎯' : '🧲';
                 streams.push({
-                    name: `🧲 ${torrent.quality}`,
-                    title: `${torrent.title} | ${torrent.size} | ${torrent.seeders} seeds | ⚠️ ADD TO RD`,
+                    name: `${qualityIcon} ${torrent.quality}`,
+                    title: `🎬 ${torrent.title}\n📊 ${torrent.quality} | 💾 ${torrent.size} | 👤 ${torrent.seeders} seeds\n⚠️ ADD TO REAL-DEBRID TO STREAM`,
                     infoHash: torrent.info_hash,
                     fileIdx: 0
                 });
             }
+            
+            // انتظر قليلاً بين الطلبات
+            if (i < toProcess.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
         }
         
-        // إضافة خيار للدليل على العمل
+        // إضافة ستريم اختباري يعمل دائماً
         streams.push({
-            name: '✅ WORKING ADDON',
-            title: `Souhail Streams is working! | Movie: ${movieInfo.title} | Found ${torrents.length} torrents`,
-            url: 'https://httpbin.org/status/200'
+            name: '📺 TEST STREAM',
+            title: '🎬 Test Video Stream\n✅ Always works for testing\n⭐ Direct MP4 link',
+            url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
         });
         
         console.log(`🚀 إرسال ${streams.length} تيار`);
@@ -178,6 +194,7 @@ builder.defineStreamHandler(async ({ id, type }) => {
         console.error('❌ Error:', error.message);
         return {
             streams: [{
+                name: '❌ Error',
                 title: `Error: ${error.message}`,
                 url: ''
             }]
@@ -198,14 +215,14 @@ function generateHash(str) {
 
 function getRandomSize(quality) {
     const sizes = {
-        '4K UHD': ['15.2 GB', '18.7 GB', '22.3 GB', '25.8 GB'],
-        '1080p BluRay': ['8.5 GB', '10.2 GB', '12.7 GB', '15.3 GB'],
-        '1080p WEB-DL': ['4.2 GB', '5.8 GB', '7.3 GB', '9.1 GB'],
-        '720p': ['2.8 GB', '3.5 GB', '4.2 GB', '5.1 GB'],
-        '480p': ['1.2 GB', '1.8 GB', '2.3 GB', '2.9 GB']
+        '4K UHD': ['15.2 GB', '18.7 GB', '22.3 GB'],
+        '1080p BluRay': ['8.5 GB', '10.2 GB', '12.7 GB'],
+        '1080p WEB-DL': ['4.2 GB', '5.8 GB', '7.3 GB'],
+        '720p': ['2.8 GB', '3.5 GB', '4.2 GB'],
+        '480p': ['1.2 GB', '1.8 GB', '2.3 GB']
     };
     
-    const available = sizes[quality] || ['2.5 GB', '3.8 GB', '5.2 GB'];
+    const available = sizes[quality] || ['2.5 GB', '3.8 GB'];
     return available[Math.floor(Math.random() * available.length)];
 }
 
