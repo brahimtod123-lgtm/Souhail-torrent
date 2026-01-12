@@ -5,242 +5,170 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 const RD_KEY = process.env.REAL_DEBRID_API;
 
-// 1. MANIFEST
+// مهم: إضافة header لـCORS
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    next();
+});
+
+// 1. MANIFEST - تأكد من الإعدادات
 app.get('/manifest.json', (req, res) => {
     res.json({
-        "id": "com.souhail.stremio",
-        "version": "1.0.0",
-        "name": "Souhail Streamer",
-        "description": "Real-Debrid Torrent Streaming",
+        "id": "com.souhail.streamer.v2",  // غير الـID عشان يتعرف كإضافة جديدة
+        "version": "2.0.0",  // زد رقم الإصدار
+        "name": "Souhail Premium",
+        "description": "Real-Debrid Torrent Streaming with Advanced Sorting",
         "logo": "https://cdn-icons-png.flaticon.com/512/3095/3095588.png",
+        "background": "https://images.unsplash.com/photo-1536440136628-849c177e76a1",
         "resources": ["stream"],
         "types": ["movie", "series"],
-        "idPrefixes": ["tt"]
+        "idPrefixes": ["tt"],
+        "catalogs": []
     });
 });
 
-// 2. STREAM مع التنسيق الجديد
+// 2. STREAM - نسخة مبسطة أولاً للتجربة
 app.get('/stream/:type/:id.json', async (req, res) => {
-    const { type, id } = req.params;
+    console.log(`📥 Request: ${req.params.type}/${req.params.id}`);
     
-    if (!RD_KEY || RD_KEY === 'your_api_key_here') {
+    if (!RD_KEY) {
         return res.json({ 
             streams: [],
-            error: "Real-Debrid API key not configured"
+            error: "Real-Debrid API not configured"
         });
     }
     
     try {
-        const torrentioUrl = `https://torrentio.strem.fun/realdebrid=${RD_KEY}/stream/${type}/${id}.json`;
-        const response = await fetch(torrentioUrl);
-        const data = await response.json();
+        const torrentioUrl = `https://torrentio.strem.fun/realdebrid=${RD_KEY}/stream/${req.params.type}/${req.params.id}.json`;
+        console.log(`🔗 Fetching: ${torrentioUrl}`);
         
+        const response = await fetch(torrentioUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0'
+            },
+            timeout: 10000
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Torrentio error: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log(`✅ Found ${data.streams?.length || 0} streams`);
+        
+        // إذا ماكانش فيه streams، رجع array فارغ
         if (!data.streams || data.streams.length === 0) {
             return res.json({ streams: [] });
         }
         
-        // جلب اسم الفيلم من OMDB
-        let movieTitle = await getMovieTitle(id);
-        
-        const processedStreams = data.streams.map(stream => {
-            const info = extractInfoFromTitle(stream.name || stream.title);
+        // معالجة بسيطة أولاً للتجربة
+        const processedStreams = data.streams.map((stream, index) => {
+            const title = stream.name || stream.title || `Stream ${index + 1}`;
             const isCached = stream.url && stream.url.includes('real-debrid.com');
             
+            // تنسيق مبسط للتجربة
+            const formattedTitle = isCached 
+                ? `✅ RD Cached • ${title}`
+                : `🔗 Torrent • ${title}`;
+            
             return {
-                title: formatCustomTitle(movieTitle, info, isCached),
-                name: stream.name || stream.title,
+                title: formattedTitle,
                 url: stream.url,
-                behaviorHints: stream.behaviorHints || {},
-                // للترتيب
-                _size: info.sizeInBytes || 0,
-                _quality: info.qualityValue || 0,
-                _seeders: info.seeders || 0,
-                _isCached: isCached
+                behaviorHints: stream.behaviorHints || {}
             };
         });
         
-        // الترتيب: Cached أولاً → الحجم → الجودة → Seeders
-        const sortedStreams = processedStreams.sort((a, b) => {
-            // 1. Cached أولاً
-            if (b._isCached !== a._isCached) {
-                return b._isCached ? 1 : -1;
-            }
-            
-            // 2. من الأكبر حجماً
-            if (b._size !== a._size) {
-                return b._size - a._size;
-            }
-            
-            // 3. أعلى جودة
-            if (b._quality !== a._quality) {
-                return b._quality - a._quality;
-            }
-            
-            // 4. أعلى seeders
-            return b._seeders - a._seeders;
-        });
-        
-        const finalStreams = sortedStreams.map(stream => ({
-            title: stream.title,
-            url: stream.url,
-            behaviorHints: stream.behaviorHints
-        }));
-        
-        res.json({ streams: finalStreams });
+        res.json({ streams: processedStreams });
         
     } catch (error) {
-        console.error('Error:', error);
-        res.json({ streams: [] });
+        console.error('❌ Error:', error.message);
+        res.json({ 
+            streams: [],
+            error: error.message
+        });
     }
 });
 
-// 3. دالة التنسيق حسب طلبك
-function formatCustomTitle(movieTitle, info, isCached) {
-    const lines = [];
+// 3. صفحة تجريبية
+app.get('/test/:imdb?', async (req, res) => {
+    const imdbId = req.params.imdb || 'tt1375666'; // Inception by default
     
-    // السطر الأول: اسم الفيلم
-    if (movieTitle) {
-        lines.push(`💎🎬 ${movieTitle}`);
-    }
-    
-    // السطر الثاني: المعلومات الأساسية
-    const mainInfo = [
-        info.size ? `💎💾 ${info.size}` : '💎💾 Unknown',
-        `💎📺 ${info.quality}`,
-        info.seeders > 0 ? `💎🧑‍🔧 ${info.seeders}` : '💎🧑‍🔧 ?',
-        `💎🎞️ ${info.codec}`,
-        `💎🎧 ${info.audio}`,
-        `💎🔊 ${info.language}`,
-        `💎🌐 ${info.subs}`
-    ].join('  ');
-    lines.push(mainInfo);
-    
-    // السطر الثالث: النوع
-    lines.push(isCached ? '💎🧲 RD Cached' : '💎📡 Torrent');
-    
-    return lines.join('\n');
-}
-
-// 4. استخراج المعلومات
-function extractInfoFromTitle(title) {
-    const info = {
-        quality: '1080p',
-        qualityValue: 3, // 1080p = 3
-        codec: 'H.264',
-        audio: 'AC3',
-        language: 'English',
-        subs: 'EN',
-        size: 'Unknown',
-        sizeInBytes: 0,
-        seeders: 0
-    };
-    
-    if (!title) return info;
-    
-    // الجودة
-    if (title.match(/4K/i)) {
-        info.quality = '4K';
-        info.qualityValue = 5;
-    } else if (title.match(/2160p/i)) {
-        info.quality = '2160p';
-        info.qualityValue = 4;
-    } else if (title.match(/1080p/i)) {
-        info.quality = '1080p';
-        info.qualityValue = 3;
-    } else if (title.match(/720p/i)) {
-        info.quality = '720p';
-        info.qualityValue = 2;
-    } else if (title.match(/480p/i)) {
-        info.quality = '480p';
-        info.qualityValue = 1;
-    }
-    
-    // الكودك
-    if (title.match(/x265|HEVC/i)) info.codec = 'HEVC';
-    else if (title.match(/AV1/i)) info.codec = 'AV1';
-    else if (title.match(/VP9/i)) info.codec = 'VP9';
-    
-    // الصوت
-    if (title.match(/DDP5\.1|Dolby Digital Plus/i)) info.audio = 'DDP5.1';
-    else if (title.match(/DTS-HD|DTS-HD MA/i)) info.audio = 'DTS-HD MA';
-    else if (title.match(/TrueHD/i)) info.audio = 'TrueHD';
-    else if (title.match(/AC3|Dolby Digital/i)) info.audio = 'AC3';
-    else if (title.match(/AAC/i)) info.audio = 'AAC';
-    
-    // اللغة
-    if (title.match(/Arabic|AR/i)) info.language = 'Arabic';
-    else if (title.match(/French|FR/i)) info.language = 'French';
-    else if (title.match(/Spanish|ES/i)) info.language = 'Spanish';
-    else if (title.match(/Multi/i)) info.language = 'Multi';
-    
-    // الترجمة
-    if (title.match(/Arabic Subs|AR-Subs/i)) info.subs = 'AR';
-    else if (title.match(/French Subs|FR-Subs/i)) info.subs = 'FR';
-    else if (title.match(/Spanish Subs|ES-Subs/i)) info.subs = 'ES';
-    else if (title.match(/Multi Subs/i)) info.subs = 'Multi';
-    
-    // الحجم
-    const sizeMatch = title.match(/(\d+(\.\d+)?)\s*(GB|MB)/i);
-    if (sizeMatch) {
-        const num = parseFloat(sizeMatch[1]);
-        const unit = sizeMatch[3].toUpperCase();
-        info.size = `${num} ${unit}`;
-        info.sizeInBytes = unit === 'GB' ? num * 1024 * 1024 * 1024 : num * 1024 * 1024;
-    }
-    
-    // الـSeeders
-    const seedersMatch = title.match(/(\d+)\s*Seeds?/i) || 
-                        title.match(/Seeds?:?\s*(\d+)/i);
-    if (seedersMatch) info.seeders = parseInt(seedersMatch[1]);
-    
-    return info;
-}
-
-// 5. دالة جلب اسم الفيلم من OMDB
-async function getMovieTitle(imdbId) {
     try {
-        // إذا كان IMDB ID
-        if (imdbId.startsWith('tt')) {
-            const omdbUrl = `https://www.omdbapi.com/?i=${imdbId}&apikey=YOUR_OMDB_API`;
-            const response = await fetch(omdbUrl);
-            const data = await response.json();
-            
-            if (data.Title) {
-                return `${data.Title} (${data.Year})`;
-            }
-        }
-        return null;
+        const testUrl = `https://torrentio.strem.fun/realdebrid=${RD_KEY}/stream/movie/${imdbId}.json`;
+        const response = await fetch(testUrl);
+        const data = await response.json();
+        
+        res.send(`
+            <h1>🧪 Test Page</h1>
+            <p>Testing IMDB: ${imdbId}</p>
+            <p>Real-Debrid: ${RD_KEY ? '✅ Configured' : '❌ Missing'}</p>
+            <hr>
+            <h3>Raw Torrentio Response:</h3>
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+            <hr>
+            <h3>Test Links:</h3>
+            <ul>
+                <li><a href="/manifest.json">manifest.json</a></li>
+                <li><a href="/stream/movie/${imdbId}.json">/stream/movie/${imdbId}.json</a></li>
+                <li><a href="/stream/movie/tt0816692.json">Interstellar</a></li>
+                <li><a href="/stream/movie/tt0468569.json">The Dark Knight</a></li>
+            </ul>
+        `);
     } catch (error) {
-        return null;
+        res.send(`Error: ${error.message}`);
     }
-}
+});
 
-// 6. صفحة الرئيسية
+// 4. Homepage
 app.get('/', (req, res) => {
     res.send(`
-        <h1>🎬 souhail-stremio</h1>
-        <p><strong>Install URL:</strong> <code>https://${req.hostname}/manifest.json</code></p>
-        <p><strong>Real-Debrid:</strong> ${RD_KEY ? '✅' : '❌'}</p>
+        <h1>🎬 souhail-stremio v2</h1>
+        <p><strong>Status:</strong> ${RD_KEY ? '✅ Ready' : '❌ Needs RD Key'}</p>
+        <p><strong>Install URL for Stremio:</strong></p>
+        <code>https://${req.hostname}/manifest.json</code>
         <hr>
-        <h3>Test Links:</h3>
-        <a href="/stream/movie/tt1375666.json">Inception</a><br>
-        <a href="/stream/movie/tt0816692.json">Interstellar</a>
+        <h3>Steps:</h3>
+        <ol>
+            <li>Delete old addon from Stremio</li>
+            <li>Install new addon with above URL</li>
+            <li>Test with: <a href="/test">Test Page</a></li>
+        </ol>
     `);
 });
 
-// 7. Health check
+// 5. Health check
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({
+        status: 'ok',
+        version: '2.0.0',
+        realdebrid: RD_KEY ? 'configured' : 'missing',
+        timestamp: new Date().toISOString()
+    });
+});
+
+// 6. Error handler
+app.use((err, req, res, next) => {
+    console.error('Server error:', err);
+    res.status(500).json({ error: 'Internal server error' });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`
-    ================================
-    🚀 souhail-stremio
-    ================================
-    Port: ${PORT}
-    URL: http://localhost:${PORT}
-    RD: ${RD_KEY ? '✅' : '❌'}
-    ================================
+    ========================================
+    🚀 SOUHAIL-STREMIO v2
+    ========================================
+    📍 Port: ${PORT}
+    🌐 URL: https://${process.env.RAILWAY_STATIC_URL || `localhost:${PORT}`}
+    🔗 Install URL: /manifest.json
+    🔑 Real-Debrid: ${RD_KEY ? '✅ Ready' : '❌ NEEDS API KEY'}
+    ========================================
     `);
+    
+    if (!RD_KEY) {
+        console.log(`
+    ⚠️  IMPORTANT: Add REAL_DEBRID_API in Railway Variables!
+    ⚠️  Get key from: https://real-debrid.com/apitoken
+        `);
+    }
 });
