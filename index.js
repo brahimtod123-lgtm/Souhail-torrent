@@ -10,7 +10,26 @@ app.use((req, res, next) => {
     next();
 });
 
-// MANIFEST - تأكد من النسخة
+// 1. HEALTH CHECK - ضيفها أول حاجة
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'healthy',
+        version: '10.0.0',
+        addon: 'Souhail Torrent Master v10',
+        package: 'souhail-torrent-master@10.0.0',
+        realdebrid: RD_KEY ? 'configured' : 'not_configured',
+        timestamp: new Date().toISOString(),
+        endpoints: [
+            '/manifest.json',
+            '/stream/:type/:id.json',
+            '/install',
+            '/test',
+            '/'
+        ]
+    });
+});
+
+// 2. MANIFEST
 app.get('/manifest.json', (req, res) => {
     console.log('📄 Manifest requested - Version 10.0.0');
     
@@ -32,7 +51,7 @@ app.get('/manifest.json', (req, res) => {
     });
 });
 
-// STREAM
+// 3. STREAM
 app.get('/stream/:type/:id.json', async (req, res) => {
     console.log(`🎬 Stream request: ${req.params.type}/${req.params.id}`);
     
@@ -75,7 +94,7 @@ app.get('/stream/:type/:id.json', async (req, res) => {
     }
 });
 
-// دوال المساعدة
+// 4. دوال المساعدة
 function analyzeTitle(title) {
     return {
         cleanName: getCleanName(title),
@@ -161,96 +180,184 @@ function getYear(title) {
 function createTitle(info, isCached) {
     const lines = [];
     
-    // اسم الفيلم + السنة
     lines.push(`🎬 ${info.cleanName}${info.year ? ` (${info.year})` : ''}`);
-    
-    // الحجم + الجودة + السيدرز
     lines.push(`💾 ${info.size}  |  📺 ${info.quality}  |  👤 ${info.seeders || '?'}`);
-    
-    // التقنية
     lines.push(`🎞️ ${info.codec}  |  🔊 ${info.audio}  |  📦 ${info.source}`);
-    
-    // اللغات + الموقع
     lines.push(`🌍 ${info.language}  |  📝 ${info.subs}  |  🏷️ ${info.site}`);
-    
-    // النوع
     lines.push(isCached ? '✅ REAL-DEBRID CACHED' : '🔗 TORRENT STREAM');
     
     return lines.join('\n');
 }
 
-// INSTALL PAGE
+// 5. INSTALL PAGE
 app.get('/install', (req, res) => {
     res.send(`
+        <!DOCTYPE html>
         <html>
-        <body style="font-family: Arial; padding: 20px; text-align: center;">
-            <h1>🎬 Souhail Torrent Master v10</h1>
-            <p><strong>Version:</strong> 10.0.0</p>
-            <p><strong>ID:</strong> org.souhail.torrent.master.v10</p>
+        <head>
+            <title>Souhail Torrent Master v10 - Install</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    padding: 20px;
+                    text-align: center;
+                    max-width: 600px;
+                    margin: 0 auto;
+                }
+                .version {
+                    background: #28a745;
+                    color: white;
+                    padding: 5px 10px;
+                    border-radius: 3px;
+                    font-weight: bold;
+                }
+                .install-btn {
+                    display: inline-block;
+                    background: #007bff;
+                    color: white;
+                    padding: 15px 30px;
+                    border-radius: 5px;
+                    text-decoration: none;
+                    font-size: 18px;
+                    margin: 20px 0;
+                }
+                .url-box {
+                    background: #f8f9fa;
+                    padding: 15px;
+                    border-radius: 5px;
+                    margin: 20px 0;
+                    text-align: left;
+                }
+                code {
+                    background: #e9ecef;
+                    padding: 5px;
+                    border-radius: 3px;
+                    font-family: monospace;
+                }
+            </style>
+        </head>
+        <body>
+            <h1>🎬 Souhail Torrent Master</h1>
+            <p>Version: <span class="version">10.0.0</span></p>
+            <p>Addon ID: <code>org.souhail.torrent.master.v10</code></p>
             
             <a href="stremio://stremio.xyz/app/${req.hostname}/manifest.json" 
-               style="display: inline-block; background: #28a745; color: white; padding: 15px 30px; border-radius: 5px; text-decoration: none; margin: 20px 0; font-size: 18px;">
-                📲 Install v10 Now
+               class="install-btn">
+                📲 Install Now
             </a>
             
-            <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-                <p><strong>Manual Install URL:</strong></p>
-                <code style="background: #e9ecef; padding: 10px; display: block;">https://${req.hostname}/manifest.json</code>
+            <div class="url-box">
+                <p><strong>Manual Installation:</strong></p>
+                <p>Copy this URL and paste in Stremio:</p>
+                <code>https://${req.hostname}/manifest.json</code>
             </div>
             
-            <p><a href="/test">Test</a> | <a href="/">Home</a></p>
+            <div style="margin-top: 30px;">
+                <h3>✅ Status Check:</h3>
+                <ul style="text-align: left;">
+                    <li><a href="/health">/health</a> - Server status</li>
+                    <li><a href="/manifest.json">/manifest.json</a> - Addon manifest</li>
+                    <li><a href="/test">/test</a> - Test page</li>
+                    <li><a href="/stream/movie/tt1375666.json">/stream/movie/tt1375666.json</a> - Test stream</li>
+                </ul>
+            </div>
+            
+            <p style="margin-top: 30px; color: #666;">
+                Real-Debrid Status: <strong>${RD_KEY ? '✅ Configured' : '❌ Not Configured'}</strong>
+            </p>
         </body>
         </html>
     `);
 });
 
-// TEST PAGE
+// 6. TEST PAGE
 app.get('/test', (req, res) => {
     res.send(`
+        <!DOCTYPE html>
         <html>
-        <body style="font-family: Arial; padding: 20px;">
-            <h1>Test v10</h1>
-            <pre style="background: #f8f9fa; padding: 15px;">
+        <head>
+            <title>Test - Souhail v10</title>
+            <style>
+                body { font-family: Arial; padding: 20px; }
+                .example { background: #f8f9fa; padding: 15px; border-radius: 5px; }
+                pre { white-space: pre-wrap; font-family: monospace; }
+                a { color: #007bff; text-decoration: none; }
+                a:hover { text-decoration: underline; }
+            </style>
+        </head>
+        <body>
+            <h1>🧪 Test Page - v10.0.0</h1>
+            <p><a href="/install">← Back to Install</a></p>
+            
+            <div class="example">
+                <h3>📋 Expected Output:</h3>
+                <pre>
 🎬 Inception (2010)
 💾 1.8 GB  |  📺 1080p  |  👤 1500
 🎞️ H.264  |  🔊 DTS-HD  |  📦 BluRay
 🌍 English  |  📝 EN  |  🏷️ YTS
 ✅ REAL-DEBRID CACHED</pre>
+            </div>
             
+            <h3>🔗 Test Links:</h3>
             <ul>
-                <li><a href="/stream/movie/tt1375666.json">Inception</a></li>
-                <li><a href="/manifest.json">Manifest</a></li>
+                <li><a href="/manifest.json" target="_blank">manifest.json</a></li>
+                <li><a href="/stream/movie/tt1375666.json" target="_blank">Inception (tt1375666)</a></li>
+                <li><a href="/stream/movie/tt0816692.json" target="_blank">Interstellar (tt0816692)</a></li>
+                <li><a href="/stream/movie/tt0468569.json" target="_blank">The Dark Knight (tt0468569)</a></li>
+                <li><a href="/stream/series/tt0944947.json" target="_blank">Game of Thrones (tt0944947)</a></li>
+            </ul>
+            
+            <h3>📊 Server Info:</h3>
+            <ul>
+                <li><a href="/health" target="_blank">/health</a> - Health check</li>
+                <li>Package: souhail-torrent-master@10.0.0</li>
+                <li>ID: org.souhail.torrent.master.v10</li>
+                <li>Real-Debrid: ${RD_KEY ? '✅' : '❌'}</li>
             </ul>
         </body>
         </html>
     `);
 });
 
-// HOME
+// 7. HOME PAGE - Redirect to install
 app.get('/', (req, res) => {
     res.redirect('/install');
 });
 
-// HEALTH
-app.get('/health', (req, res) => {
-    res.json({
-        status: 'ok',
-        version: '10.0.0',
-        name: 'Souhail Torrent Master',
-        timestamp: new Date().toISOString()
-    });
+// 8. ERROR HANDLER
+app.use((req, res) => {
+    res.status(404).send(`
+        <html>
+        <body style="font-family: Arial; padding: 20px; text-align: center;">
+            <h1>404 - Page Not Found</h1>
+            <p>The requested URL ${req.url} was not found.</p>
+            <p><a href="/">Go to Home</a> | <a href="/install">Go to Install</a></p>
+        </body>
+        </html>
+    `);
 });
 
+// 9. START SERVER
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`
-    ========================================
+    ============================================
     🚀 SOUHAIL TORRENT MASTER v10.0.0
-    ========================================
+    ============================================
     📍 Port: ${PORT}
     🌐 URL: http://localhost:${PORT}
-    🔗 Install: /install
-    🆔 ID: org.souhail.torrent.master.v10
+    🔗 Install Page: /install
+    📊 Health Check: /health
+    🧪 Test Page: /test
+    🆔 Addon ID: org.souhail.torrent.master.v10
     📦 Package: souhail-torrent-master@10.0.0
-    ========================================
+    ============================================
     `);
+    
+    console.log('✅ Endpoints available:');
+    console.log('  - GET /health');
+    console.log('  - GET /manifest.json');
+    console.log('  - GET /install');
+    console.log('  - GET /test');
+    console.log('  - GET /stream/:type/:id.json');
 });
