@@ -5,16 +5,15 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 const RD_KEY = process.env.REAL_DEBRID_API;
 
-// CORS
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     next();
 });
 
-// 1. MANIFEST
+// MANIFEST
 app.get('/manifest.json', (req, res) => {
     res.json({
-        "id": "com.souhail.streamer.final",
+        "id": "com.souhail.streamer.clean",
         "version": "1.0.0",
         "name": "Souhail Premium",
         "description": "Real-Debrid Torrent Streaming",
@@ -25,7 +24,7 @@ app.get('/manifest.json', (req, res) => {
     });
 });
 
-// 2. STREAM - النسخة النهائية
+// STREAM
 app.get('/stream/:type/:id.json', async (req, res) => {
     const { type, id } = req.params;
     
@@ -44,13 +43,11 @@ app.get('/stream/:type/:id.json', async (req, res) => {
         
         const processedStreams = data.streams.map((stream) => {
             const originalTitle = stream.name || stream.title || '';
+            const info = extractCleanInfo(originalTitle);
             const isCached = stream.url && stream.url.includes('real-debrid.com');
             
-            // استخراج منظم بدون عشوائية
-            const info = extractInfoSystematically(originalTitle);
-            
             return {
-                title: formatTitleSystematically(info, isCached),
+                title: formatOnePerLine(info, isCached, originalTitle),
                 url: stream.url,
                 behaviorHints: stream.behaviorHints || {},
                 _size: info.sizeInBytes || 0,
@@ -60,7 +57,7 @@ app.get('/stream/:type/:id.json', async (req, res) => {
             };
         });
         
-        // ترتيب ثابت
+        // الترتيب
         const sortedStreams = processedStreams.sort((a, b) => {
             if (b._isCached !== a._isCached) return b._isCached ? 1 : -1;
             if (b._size !== a._size) return b._size - a._size;
@@ -81,10 +78,62 @@ app.get('/stream/:type/:id.json', async (req, res) => {
     }
 });
 
-// 3. استخراج منظم بشكل منهجي
-function extractInfoSystematically(title) {
+// كل تفصيل على سطر خاص
+function formatOnePerLine(info, isCached, originalTitle) {
+    const lines = [];
+    
+    // سطر 1: اسم الفيلم
+    const cleanTitle = cleanTitleString(originalTitle);
+    lines.push(`💎🎬 ${cleanTitle || 'Movie Stream'}`);
+    
+    // سطر 2: حجم الفيلم
+    lines.push(`💎💾 ${info.size}`);
+    
+    // سطر 3: جودة الصورة
+    lines.push(`💎📺 ${info.quality}`);
+    
+    // سطر 4: السيدرز
+    lines.push(`💎🧑‍🔧 ${info.seeders > 0 ? info.seeders : '?'}`);
+    
+    // سطر 5: الكودك
+    lines.push(`💎🎞️ ${info.codec}`);
+    
+    // سطر 6: الصوت
+    lines.push(`💎🎧 ${info.audio}`);
+    
+    // سطر 7: لغة الفيلم
+    lines.push(`💎🔊 ${info.language}`);
+    
+    // سطر 8: لغة الترجمة
+    lines.push(`💎🌐 ${info.subs}`);
+    
+    // سطر 9: النوع
+    lines.push(isCached ? '💎🧲 RD Cached' : '💎📡 Torrent');
+    
+    return lines.join('\n');
+}
+
+// تنظيف العنوان
+function cleanTitleString(title) {
+    if (!title) return '';
+    
+    // إزالة الأشياء غير المرغوبة
+    return title
+        .replace(/\[.*?\]/g, '')
+        .replace(/\./g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/(\d+(\.\d+)?)\s*(GB|MB)/gi, '')
+        .replace(/(\d+)\s*Seeds?/gi, '')
+        .replace(/4K|2160p|1080p|720p|480p/gi, '')
+        .replace(/x265|x264|HEVC|AV1|VP9/gi, '')
+        .replace(/DDP5\.1|DTS-HD|TrueHD|AC3|AAC/gi, '')
+        .trim()
+        .substring(0, 60);
+}
+
+// استخراج المعلومات
+function extractCleanInfo(title) {
     const info = {
-        cleanTitle: '',
         size: 'Unknown',
         sizeInBytes: 0,
         quality: '1080p',
@@ -96,294 +145,120 @@ function extractInfoSystematically(title) {
         subs: 'EN'
     };
     
-    if (!title || title.trim() === '') return info;
+    if (!title) return info;
     
-    // نسخة للعمل عليها
-    let text = title.toLowerCase();
-    
-    // === 1. الحجم أولاً (الأكثر وضوحاً) ===
-    const sizePatterns = [
-        /(\d+(\.\d+)?)\s*(gb|gib)/,
-        /(\d+(\.\d+)?)\s*(mb|mib)/
-    ];
-    
-    for (const pattern of sizePatterns) {
-        const match = text.match(pattern);
-        if (match) {
-            const num = parseFloat(match[1]);
-            const unit = match[3].toLowerCase();
-            info.size = `${num} ${unit.includes('g') ? 'GB' : 'MB'}`;
-            info.sizeInBytes = unit.includes('g') ? num * 1073741824 : num * 1048576;
-            text = text.replace(match[0], ' ');
-            break;
-        }
+    // الحجم
+    const sizeMatch = title.match(/(\d+(\.\d+)?)\s*(GB|MB)/i);
+    if (sizeMatch) {
+        const num = parseFloat(sizeMatch[1]);
+        const unit = sizeMatch[3].toUpperCase();
+        info.size = `${num} ${unit}`;
+        info.sizeInBytes = unit === 'GB' ? num * 1073741824 : num * 1048576;
     }
     
-    // === 2. الجودة ثانياً ===
-    const qualityPatterns = [
-        ['4k|uhd', '4K', 5],
-        ['2160p', '2160p', 4],
-        ['1080p|fhd|fullhd', '1080p', 3],
-        ['720p|hd', '720p', 2],
-        ['480p|sd', '480p', 1]
-    ];
-    
-    for (const [pattern, quality, value] of qualityPatterns) {
-        if (text.match(new RegExp(pattern))) {
-            info.quality = quality;
-            info.qualityValue = value;
-            text = text.replace(new RegExp(pattern, 'g'), ' ');
-            break;
-        }
+    // الجودة
+    if (title.match(/4K/i)) {
+        info.quality = '4K';
+        info.qualityValue = 5;
+    } else if (title.match(/2160p/i)) {
+        info.quality = '2160p';
+        info.qualityValue = 4;
+    } else if (title.match(/1080p/i)) {
+        info.quality = '1080p';
+        info.qualityValue = 3;
+    } else if (title.match(/720p/i)) {
+        info.quality = '720p';
+        info.qualityValue = 2;
+    } else if (title.match(/480p/i)) {
+        info.quality = '480p';
+        info.qualityValue = 1;
     }
     
-    // === 3. السيدرز ===
-    const seedersMatch = text.match(/(\d+)\s*seeds?/) || text.match(/seeds?:?\s*(\d+)/);
-    if (seedersMatch) {
-        info.seeders = parseInt(seedersMatch[1]);
-        text = text.replace(seedersMatch[0], ' ');
-    }
+    // السيدرز
+    const seedersMatch = title.match(/(\d+)\s*Seeds?/i);
+    if (seedersMatch) info.seeders = parseInt(seedersMatch[1]);
     
-    // === 4. الكودك ===
-    if (text.match(/x265|hevc/)) {
-        info.codec = 'HEVC';
-        text = text.replace(/x265|hevc/g, ' ');
-    } else if (text.match(/av1/)) {
-        info.codec = 'AV1';
-        text = text.replace(/av1/g, ' ');
-    } else if (text.match(/vp9/)) {
-        info.codec = 'VP9';
-        text = text.replace(/vp9/g, ' ');
-    } else if (text.match(/x264/)) {
-        info.codec = 'H.264';
-        text = text.replace(/x264/g, ' ');
-    }
+    // الكودك
+    if (title.match(/x265|HEVC/i)) info.codec = 'HEVC';
+    else if (title.match(/AV1/i)) info.codec = 'AV1';
+    else if (title.match(/VP9/i)) info.codec = 'VP9';
     
-    // === 5. الصوت ===
-    const audioPatterns = [
-        ['ddp5\\.1|dolby digital plus', 'DDP5.1'],
-        ['dts-hd|dts-hd ma', 'DTS-HD MA'],
-        ['truehd', 'TrueHD'],
-        ['ac3|dolby digital', 'AC3'],
-        ['aac', 'AAC']
-    ];
+    // الصوت
+    if (title.match(/DDP5\.1|Dolby Digital Plus/i)) info.audio = 'DDP5.1';
+    else if (title.match(/DTS-HD|DTS-HD MA/i)) info.audio = 'DTS-HD MA';
+    else if (title.match(/TrueHD/i)) info.audio = 'TrueHD';
+    else if (title.match(/AC3|Dolby Digital/i)) info.audio = 'AC3';
+    else if (title.match(/AAC/i)) info.audio = 'AAC';
     
-    for (const [pattern, audio] of audioPatterns) {
-        if (text.match(new RegExp(pattern))) {
-            info.audio = audio;
-            text = text.replace(new RegExp(pattern, 'g'), ' ');
-            break;
-        }
-    }
+    // اللغة
+    if (title.match(/Arabic|AR|Arabe/i)) info.language = 'Arabic';
+    else if (title.match(/French|FR|Français/i)) info.language = 'French';
+    else if (title.match(/Spanish|ES|Español/i)) info.language = 'Spanish';
+    else if (title.match(/Multi/i)) info.language = 'Multi';
     
-    // === 6. اللغة ===
-    if (text.match(/arabic|ar|arabe/)) {
-        info.language = 'Arabic';
-        text = text.replace(/arabic|ar|arabe/g, ' ');
-    } else if (text.match(/french|fr|français/)) {
-        info.language = 'French';
-        text = text.replace(/french|fr|français/g, ' ');
-    } else if (text.match(/spanish|es|español/)) {
-        info.language = 'Spanish';
-        text = text.replace(/spanish|es|español/g, ' ');
-    } else if (text.match(/multi/)) {
-        info.language = 'Multi';
-        text = text.replace(/multi/g, ' ');
-    }
-    
-    // === 7. الترجمة ===
-    if (text.match(/arabic subs|ar-subs/)) {
-        info.subs = 'AR';
-        text = text.replace(/arabic subs|ar-subs/g, ' ');
-    } else if (text.match(/french subs|fr-subs/)) {
-        info.subs = 'FR';
-        text = text.replace(/french subs|fr-subs/g, ' ');
-    } else if (text.match(/english subs|en-subs/)) {
-        info.subs = 'EN';
-        text = text.replace(/english subs|en-subs/g, ' ');
-    } else if (text.match(/multi subs/)) {
-        info.subs = 'Multi';
-        text = text.replace(/multi subs/g, ' ');
-    }
-    
-    // === 8. تنظيف العنوان ===
-    info.cleanTitle = cleanTitleProperly(title);
+    // الترجمة
+    if (title.match(/Arabic Subs|AR-Subs/i)) info.subs = 'AR';
+    else if (title.match(/French Subs|FR-Subs/i)) info.subs = 'FR';
+    else if (title.match(/English Subs|EN-Subs/i)) info.subs = 'EN';
+    else if (title.match(/Spanish Subs|ES-Subs/i)) info.subs = 'ES';
+    else if (title.match(/Multi Subs/i)) info.subs = 'Multi';
     
     return info;
 }
 
-// 4. تنظيف العنوان بشكل صحيح
-function cleanTitleProperly(title) {
-    if (!title) return '';
-    
-    // قائمة الكلمات لإزالتها
-    const wordsToRemove = [
-        // الجودة
-        '4k', 'uhd', '2160p', '1080p', 'fhd', 'fullhd', '720p', 'hd', '480p', 'sd',
-        // الحجم
-        'gb', 'mb', 'gib', 'mib',
-        // السيدرز
-        'seeders', 'seeds', 'seed',
-        // الكودك
-        'x265', 'hevc', 'av1', 'vp9', 'x264', 'h264', 'h.264',
-        // الصوت
-        'ddp5.1', 'dolby digital plus', 'dts-hd', 'dts-hd ma', 'truehd', 'ac3', 'dolby digital', 'aac',
-        // الترميز
-        'bluray', 'blu-ray', 'bdremux', 'remux', 'web-dl', 'webdl', 'webrip', 'hdtv', 'dvdrip', 'brrip',
-        // أخرى
-        'xvid', 'divx', 'mp4', 'mkv', 'avi'
-    ];
-    
-    let cleaned = title.toLowerCase();
-    
-    // إزالة الكلمات
-    wordsToRemove.forEach(word => {
-        const regex = new RegExp(`\\b${word}\\b`, 'gi');
-        cleaned = cleaned.replace(regex, '');
-    });
-    
-    // إزالة الأرقام التي تتبعها GB/MB
-    cleaned = cleaned.replace(/\d+(\.\d+)?\s*(gb|mb|gib|mib)/gi, '');
-    
-    // إزالة الأرقام التي تتبعها Seeders
-    cleaned = cleaned.replace(/\d+\s*seeds?/gi, '');
-    
-    // إزالة الأقواس والمحتويات
-    cleaned = cleaned.replace(/\[.*?\]/g, '');
-    cleaned = cleaned.replace(/\(.*?\)/g, '');
-    
-    // تنظيف النهائي
-    cleaned = cleaned
-        .replace(/\./g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    
-    // أخذ أول 50 حرف وإضافة ... إذا كان طويل
-    if (cleaned.length > 50) {
-        cleaned = cleaned.substring(0, 47) + '...';
-    }
-    
-    return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
-}
-
-// 5. تنسيق العنوان بشكل منهجي
-function formatTitleSystematically(info, isCached) {
-    const lines = [];
-    
-    // الخط 1: العنوان النظيف أو بديل
-    if (info.cleanTitle && info.cleanTitle.length > 5) {
-        lines.push(`💎🎬 ${info.cleanTitle}`);
-    } else {
-        lines.push(`💎🎬 Media Stream`);
-    }
-    
-    // الخط 2: الحجم (مطلوب)
-    lines.push(`💎💾 ${info.size}`);
-    
-    // الخط 3: الجودة (مطلوب)
-    lines.push(`💎📺 ${info.quality}`);
-    
-    // الخط 4: السيدرز
-    lines.push(`💎🧑‍🔧 ${info.seeders > 0 ? info.seeders + ' Seeders' : '?'}`);
-    
-    // الخط 5: الكودك
-    lines.push(`💎🎞️ ${info.codec}`);
-    
-    // الخط 6: الصوت
-    lines.push(`💎🎧 ${info.audio}`);
-    
-    // الخط 7: اللغة
-    lines.push(`💎🔊 ${info.language}`);
-    
-    // الخط 8: الترجمة
-    lines.push(`💎🌐 ${info.subs}`);
-    
-    // الخط 9: المصدر
-    lines.push(isCached ? '💎🧲 RD Cached' : '💎📡 Torrent');
-    
-    return lines.join('\n');
-}
-
-// 6. صفحة Install
+// صفحة Install
 app.get('/install', (req, res) => {
     res.send(`
         <html>
-        <head><title>Install Souhail Addon</title></head>
         <body style="font-family: Arial; padding: 20px; text-align: center;">
             <h1>📲 Install Souhail Addon</h1>
-            <p>Real-Debrid streaming with systematic details</p>
-            
             <a href="stremio://stremio.xyz/app/${req.hostname}/manifest.json" 
-               style="display: inline-block; background: #28a745; color: white; padding: 15px 30px; border-radius: 5px; text-decoration: none; font-size: 18px; margin: 20px 0;">
-                📲 Click to Install
+               style="display: inline-block; background: #28a745; color: white; padding: 15px 30px; border-radius: 5px; text-decoration: none; margin: 20px 0;">
+                Install Now
             </a>
-            
-            <p>Or copy this URL to Stremio:</p>
-            <code style="background: #f4f4f4; padding: 10px; display: block; margin: 10px 0;">
-                https://${req.hostname}/manifest.json
-            </code>
-            
-            <p><a href="/">← Back to Home</a></p>
+            <p>Or copy:</p>
+            <code style="background: #f4f4f4; padding: 10px; display: block;">https://${req.hostname}/manifest.json</code>
+            <p><a href="/">← Home</a></p>
         </body>
         </html>
     `);
 });
 
-// 7. الصفحة الرئيسية
+// الصفحة الرئيسية
 app.get('/', (req, res) => {
     res.send(`
         <html>
-        <head><title>Souhail Stremio</title></head>
         <body style="font-family: Arial; padding: 20px; max-width: 600px; margin: 0 auto;">
-            <h1>🎬 Souhail Stremio Addon</h1>
-            <p><a href="/install" style="color: #28a745; font-weight: bold;">📲 Install Addon</a></p>
+            <h1>🎬 Souhail Stremio</h1>
+            <p><a href="/install">📲 Install Addon</a></p>
             
-            <h3>📋 Systematic Output Example:</h3>
-            <pre style="background: #f8f9fa; padding: 15px; border-radius: 5px; font-size: 14px; line-height: 1.5;">
-💎🎬 Inception 2010
+            <h3>📋 Format Preview:</h3>
+            <pre style="background: #f8f9fa; padding: 15px; border-radius: 5px; font-size: 14px; line-height: 1.6;">
+💎🎬 Inception 2010 BluRay
 💎💾 1.8 GB
 💎📺 1080p
-💎🧑‍🔧 1500 Seeders
+💎🧑‍🔧 1500
 💎🎞️ H.264
 💎🎧 DTS-HD
 💎🔊 English
 💎🌐 EN
 💎🧲 RD Cached</pre>
             
-            <h3>🔗 Test Links:</h3>
+            <h3>🔗 Test:</h3>
             <ul>
                 <li><a href="/stream/movie/tt1375666.json">Inception</a></li>
                 <li><a href="/stream/movie/tt0816692.json">Interstellar</a></li>
                 <li><a href="/stream/movie/tt0468569.json">The Dark Knight</a></li>
             </ul>
-            
-            <p><strong>Status:</strong> <span style="color: ${RD_KEY ? 'green' : 'red'}">
-                ${RD_KEY ? '✅ Ready' : '❌ Needs Real-Debrid API Key'}
-            </span></p>
         </body>
         </html>
     `);
 });
 
-// 8. Health check
 app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'ok',
-        version: '1.0.0',
-        systematic_extraction: true,
-        timestamp: new Date().toISOString()
-    });
+    res.json({ status: 'ok' });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`
-    ========================================
-    🎬 SOUHAIL-STREMIO (SYSTEMATIC VERSION)
-    ========================================
-    📍 Port: ${PORT}
-    🌐 URL: http://localhost:${PORT}
-    🔗 Install: /install
-    📋 Format: Systematic extraction
-    ========================================
-    `);
+    console.log(`Server running on port ${PORT}`);
 });
