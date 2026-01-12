@@ -1,11 +1,1 @@
-{
-  "name": "souhail-streams",
-  "version": "1.2.0",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
-  "dependencies": {
-    "stremio-addon-sdk": "^1.6.0"
-  }
-}
+
