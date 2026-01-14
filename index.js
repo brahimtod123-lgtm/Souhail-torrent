@@ -50,14 +50,14 @@ app.get("/stream/:type/:id.json", async (req, res) => {
           ...s,
           name: "💥🟢 SOUHAIL / RD 🟢💥",
           title: `
-1️⃣ ♻️  🎬   ${cleanTitle(title)}
-2️⃣ ♻️. 💾   ${formatSize(extractSize(title))}
-3️⃣ ♻️. 📽️   ${extract(title, /(2160p|1080p|720p)/i)}
-3️⃣ ♻️. 🎞️   ${extract(title, /(H\.265|H\.264|x265|x264)/i) || "H.264"}
-5️⃣ ♻️. 🔊   ${extract(title, /(Atmos|DDP5\.1|DD5\.1|AC3|AAC)/i) || "Audio"}
-6️⃣ ♻️. 🌍   EN / AR
-7️⃣ ♻️. ⚡   RD Cached
-8️⃣ ♻️  🧲  ${extract(title, /(YTS|RARBG|TPB|ThePirateBay|1337x)/i) || "Torrent"}
+1️⃣ ♻️ 🎬 ${extractCleanMovieTitle(title)} (${extractVideoRange(title)})
+2️⃣ ♻️ 💾 ${formatSize(extractSize(title))}
+3️⃣ ♻️ 📽️ ${extract(title, /(2160p|1080p|720p)/i)}
+4️⃣ ♻️ 🎞️ ${extract(title, /(H\.265|H\.264|x265|x264)/i) || "H.264"}
+5️⃣ ♻️ 🔊 ${extract(title, /(Atmos|DDP5\.1|DD5\.1|AC3|AAC)/i) || "Audio"}
+6️⃣ ♻️ 🌍 EN / AR
+7️⃣ ♻️ ⚡ RD Cached
+8️⃣ ♻️ 🧲 ${extract(title, /(YTS|RARBG|TPB|ThePirateBay|1337x)/i) || "Torrent"}
           `.trim()
         };
       });
@@ -94,11 +94,20 @@ function extract(text, regex) {
   return match ? match[0] : null;
 }
 
-function cleanTitle(text) {
-  return text.split("\n")[0].replace(/\./g, " ").trim();
+function extractVideoRange(text) {
+  if (/dolby\s?vision|dv/i.test(text)) return "Dolby Vision";
+  if (/hdr/i.test(text)) return "HDR";
+  return "SDR";
 }
 
-// استخراج الحجم بالـ bytes
+function extractCleanMovieTitle(text) {
+  return text
+    .split(/\b(2160p|1080p|720p|WEB|BluRay|HDR|DV|x264|x265)\b/i)[0]
+    .replace(/\./g, " ")
+    .trim();
+}
+
+// استخراج الحجم
 function extractSize(text) {
   const match = text.match(/(\d+(\.\d+)?)\s?(GB|MB)/i);
   if (!match) return 0;
