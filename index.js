@@ -9,13 +9,13 @@ const RD_KEY = process.env.REAL_DEBRID_API;
 console.log(`Starting with PORT: ${PORT}, RD_KEY: ${RD_KEY ? "yes" : "no"}`);
 
 /* =========================
-MANIFEST
+   MANIFEST
 ========================= */
 app.get("/manifest.json", (req, res) => {
   res.json({
     id: "com.souhail.stremio",
     version: "1.0.0",
-    name: "♻️🟢Souhail Premium🟢♻️",
+    name: "💎Souhail Premium💎",
     description: "Real-Debrid Streams (Clean & Technical)",
     resources: ["stream"],
     types: ["movie", "series"]
@@ -23,7 +23,7 @@ app.get("/manifest.json", (req, res) => {
 });
 
 /* =========================
-STREAM
+   STREAM
 ========================= */
 app.get("/stream/:type/:id.json", async (req, res) => {
   if (!RD_KEY) return res.json({ streams: [] });
@@ -36,23 +36,27 @@ app.get("/stream/:type/:id.json", async (req, res) => {
     const data = await response.json();
 
     let streams = (data.streams || [])
+      // ❌ نحيد CAM / TS
       .filter(s => !/(CAM|TS|TELE|SCR|HDCAM)/i.test(s.title || ""))
+      // ✅ نخلي غير الجودات المزيانة
       .filter(s => /(2160p|1080p|720p)/i.test(s.title || ""))
+      // 🔽 ترتيب حسب الحجم (من الكبير للصغير)
       .sort((a, b) => extractSize(b.title) - extractSize(a.title))
+      // 🧱 الفورما النهائي
       .map(s => {
         const title = s.title || "";
 
         return {
           ...s,
-          name: "💥🟢SOUHAIL/RD🟢💥",
-          ♻️📽️ ${extract(title, /(2160p|1080p|720p)/i)}. ♻️💾 ${formatSize(extractSize(title))}
+          name: "🛟🟢SOUHAIL/RD🟢🛟",
           title: `
-1️⃣♻️ 🎬 ${extractCleanMovieTitle(title)}
-2️⃣♻️ 💢 (${extractVideoRange(title)})                                         
-3️⃣♻️ 🎞️ ${extract(title, /(H\.265|H\.264|x265|x264)/i) || "H.264"}
-5️⃣♻️ 🔊 ${extract(title, /(Atmos|DDP5\.1|DD5\.1|AC3|AAC)/i) || "Audio"}         ♻️ 🌍 EN / AR
-7️⃣♻️ 🧲 ${extract(title, /(YTS|RARBG|TPB|ThePirateBay|1337x)/i) || "Torrent"}   ♻️ ⚡ RD Cached
-`.trim()
+1️⃣♻️🎬 ${extractCleanMovieTitle(title)}
+2️⃣♻️💾 ${formatSize(extractSize(title))}
+3️⃣♻️🎥 (${extractVideoRange(title)})           ♻️🎞️ ${extract(title, /(H\.265|H\.264|x265|x264)/i) || "H.264"}
+4️⃣♻️📽️ ${extract(title, /(2160p|1080p|720p)/i)}.                
+5️⃣♻️🔊 ${extract(title, /(Atmos|DDP5\.1|DD5\.1|AC3|AAC)/i) || "Audio"}            ♻️ 🌍 EN / AR
+      ♻️🧲 ${extract(title, /(YTS|RARBG|TPB|ThePirateBay|1337x)/i) || "Torrent"}
+          `.trim()
         };
       });
 
@@ -65,7 +69,7 @@ app.get("/stream/:type/:id.json", async (req, res) => {
 });
 
 /* =========================
-INSTALL
+   INSTALL
 ========================= */
 app.get("/install", (req, res) => {
   const baseUrl = `https://${req.hostname}`;
@@ -81,7 +85,7 @@ app.get("/install", (req, res) => {
 app.get("/", (req, res) => res.redirect("/install"));
 
 /* =========================
-HELPERS
+   HELPERS
 ========================= */
 function extract(text, regex) {
   const match = text.match(regex);
@@ -101,6 +105,7 @@ function extractCleanMovieTitle(text) {
     .trim();
 }
 
+// استخراج الحجم
 function extractSize(text) {
   const match = text.match(/(\d+(\.\d+)?)\s?(GB|MB)/i);
   if (!match) return 0;
@@ -119,7 +124,7 @@ function formatSize(sizeMB) {
 }
 
 /* =========================
-START
+   START
 ========================= */
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
