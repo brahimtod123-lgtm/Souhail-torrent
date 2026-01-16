@@ -14,8 +14,8 @@ console.log(`Starting with PORT: ${PORT}, RD_KEY: ${RD_KEY ? "yes" : "no"}`);
 app.get("/manifest.json", (req, res) => {
   res.json({
     id: "com.souhail.stremio",
-    version: "1.0.0",
-    name: "🟢 Souhail Premium 🟢",
+    version: "2.0.0",
+    name: "🟢Souhail Premium🟢",
     description: "Clean Real-Debrid Streams (Safe Formatting)",
     resources: ["stream"],
     types: ["movie", "series"]
